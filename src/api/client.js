@@ -3,7 +3,7 @@ import { store } from "../app/store";
 import { logout, setCredentials } from "../features/auth/authSlice";
 
 const apiClient = axios.create({
-  baseURL: "/api",
+  baseURL: process.env.REACT_APP_API_URL,
   headers: { "Content-Type": "application/json" },
 });
 
@@ -42,9 +42,12 @@ apiClient.interceptors.response.use(
         return Promise.reject(error);
       }
       try {
-        const res = await axios.post(`${"/api"}/auth/refresh`, {
-          refresh_token: refreshToken,
-        });
+        const res = await axios.post(
+          `${process.env.REACT_APP_API_URL}/auth/refresh`,
+          {
+            refresh_token: refreshToken,
+          },
+        );
         const { access_token, refresh_token, user } = res.data;
         store.dispatch(
           setCredentials({
