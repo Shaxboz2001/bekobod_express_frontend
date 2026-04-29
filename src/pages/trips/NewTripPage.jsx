@@ -6,6 +6,7 @@ import {
 import {
   LocationOn, FlagOutlined, EventSeat,
   Luggage, ArrowForward, Map as MapIcon,
+  MyLocation as MyLocationIcon,
 } from '@mui/icons-material';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -46,6 +47,53 @@ export default function NewTripPage() {
   const [form, setForm] = useState(INITIAL);
   const [error, setError] = useState('');
   const [mapOpen, setMapOpen] = useState(false);
+  const [loadingGeo, setLoadingGeo] = useState(false);
+  const [locationError, setLocationError] = useState('');
+
+  // ─── Joylashuvni olish ─────────────────────────────────────────────────────
+  // Strategy:
+  //   1. Telegram WebApp LocationManager (Bot API 8.0+, oktabr 2024+)
+  //      Eng aniq — Telegram sistem permissionsidan foydalanadi
+  //   2. Browser Geolocation API — fallback (eski Telegram clientlarida)
+  //
+  // Reverse geocoding (Nominatim) avtomatik manzilni qo'shadi.
+  // Tarmoq tezligi yomon bo'lsa ham, lat/lng saqlangan bo'ladi.
+  const getCurrentLocation = async () => {
+    setLocationError('');
+    setLoadingGeo(true);
+
+    try {
+      const pos = await getPositionViaTelegramOrBrowser();
+      const { latitude: lat, longitude: lng } = pos;
+
+      // Reverse geocoding — fail bo'lsa ham koordinata saqlanadi
+      let address = null;
+      try {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&accept-language=ru,uz`;
+        const ctrl = new AbortController();
+        setTimeout(() => ctrl.abort(), 3000);  // 3s timeout
+        const res = await fetch(url, { signal: ctrl.signal });
+        const data = await res.json();
+        if (data?.display_name) {
+          address = data.display_name.split(',').slice(0, 3).join(',').trim();
+        }
+      } catch (_) {
+        // Geocoding fail — koordinata saqlanadi, address null bo'ladi
+      }
+
+      setForm((f) => ({
+        ...f,
+        pickup_lat: lat,
+        pickup_lng: lng,
+        pickup_address: address,
+        pickup_point: f.pickup_point || address || `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+      }));
+    } catch (err) {
+      setLocationError(err.message || 'Жойлашувни топиб бўлмади');
+    } finally {
+      setLoadingGeo(false);
+    }
+  };
 
   const { data: pricingList = [] } = useQuery(
     'pricing',
@@ -164,28 +212,63 @@ export default function NewTripPage() {
               )}
             />
 
-            {/* Xaritada belgilash tugmasi */}
-            <Button
-              variant={form.pickup_lat ? 'contained' : 'outlined'}
-              startIcon={<MapIcon />}
-              onClick={() => setMapOpen(true)}
-              sx={{
-                borderRadius: 2,
-                bgcolor: form.pickup_lat ? '#27ae60' : 'transparent',
-                color: form.pickup_lat ? '#fff' : '#1a1a2e',
-                borderColor: '#1a1a2e',
-                '&:hover': {
-                  bgcolor: form.pickup_lat ? '#229954' : 'rgba(26,26,46,0.04)',
-                },
-                textTransform: 'none',
-                justifyContent: 'flex-start',
-                py: 1,
-              }}
-            >
-              {form.pickup_lat
-                ? `📍 ${form.pickup_address || `${form.pickup_lat.toFixed(4)}, ${form.pickup_lng.toFixed(4)}`}`
-                : 'Харитадан танлаш (ихтиёрий)'}
-            </Button>
+            {/* Lokatsiya tugmalari — 2 ta variant */}
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              {/* 1. Айни жойим — bir bosishda */}
+              <Button
+                variant={form.pickup_lat ? 'contained' : 'outlined'}
+                startIcon={
+                  loadingGeo
+                    ? <CircularProgress size={16} color="inherit" />
+                    : <MyLocationIcon />
+                }
+                onClick={getCurrentLocation}
+                disabled={loadingGeo}
+                sx={{
+                  flex: 2,
+                  borderRadius: 2,
+                  bgcolor: form.pickup_lat ? '#27ae60' : 'transparent',
+                  color: form.pickup_lat ? '#fff' : '#1a1a2e',
+                  borderColor: '#1a1a2e',
+                  '&:hover': {
+                    bgcolor: form.pickup_lat ? '#229954' : 'rgba(26,26,46,0.04)',
+                  },
+                  textTransform: 'none',
+                  justifyContent: 'flex-start',
+                  py: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {form.pickup_lat
+                  ? (form.pickup_address || `${form.pickup_lat.toFixed(4)}, ${form.pickup_lng.toFixed(4)}`)
+                  : 'Айни жойим'}
+              </Button>
+
+              {/* 2. Xaritadan tanlash — ikkinchi variant */}
+              <Button
+                variant="outlined"
+                onClick={() => setMapOpen(true)}
+                sx={{
+                  flex: 0,
+                  minWidth: 44,
+                  borderRadius: 2,
+                  borderColor: '#1a1a2e',
+                  color: '#1a1a2e',
+                  px: 0,
+                }}
+              >
+                <MapIcon />
+              </Button>
+            </Box>
+
+            {/* Lokatsiya xato xabari */}
+            {locationError && (
+              <Alert severity="warning" onClose={() => setLocationError('')}>
+                {locationError}
+              </Alert>
+            )}
 
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Divider sx={{ flex: 1 }} />
@@ -442,4 +525,93 @@ function SectionLabel({ children }) {
       {children}
     </Typography>
   );
+}
+
+// ─── Joylashuvni olish: Telegram LocationManager → Browser Geolocation ──────
+//
+// Strategy:
+//   1. tg.LocationManager (Bot API 8.0+, oktabr 2024+) — agar mavjud bo'lsa
+//      Telegram'ning native permission flow'idan foydalanadi (eng yaxshi UX)
+//   2. navigator.geolocation — universal fallback
+//
+// Returns: { latitude, longitude, accuracy }
+// Throws: Error with localized message
+function getPositionViaTelegramOrBrowser() {
+  const tg = window.Telegram?.WebApp;
+
+  // ─── 1. Telegram LocationManager (yangi Bot API 8.0+) ──────────────────────
+  if (tg?.LocationManager) {
+    return new Promise((resolve, reject) => {
+      // Initialize qilish kerak — bir martagina
+      const initPromise = tg.LocationManager.isInited
+        ? Promise.resolve()
+        : new Promise((res) => tg.LocationManager.init(res));
+
+      initPromise.then(() => {
+        if (!tg.LocationManager.isLocationAvailable) {
+          // Permission yo'q yoki cihaz qo'llab-quvvatlamaydi → fallback
+          getViaBrowser().then(resolve).catch(reject);
+          return;
+        }
+
+        if (!tg.LocationManager.isAccessGranted) {
+          // Permission so'rash — Telegram native dialog
+          tg.LocationManager.openSettings();
+          // openSettings async — javob kelmaydi. Foydalanuvchi keyin qayta bosishi kerak.
+          reject(new Error('Telegram созламаларидан жойлашувга рухсат беринг'));
+          return;
+        }
+
+        tg.LocationManager.getLocation((loc) => {
+          if (!loc) {
+            // Foydalanuvchi rad etdi yoki tarmoq xatosi
+            getViaBrowser().then(resolve).catch(reject);
+            return;
+          }
+          resolve({
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+            accuracy: loc.horizontal_accuracy,
+          });
+        });
+      });
+    });
+  }
+
+  // ─── 2. Fallback: browser Geolocation API ──────────────────────────────────
+  return getViaBrowser();
+}
+
+function getViaBrowser() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Браузер жойлашувни қўллаб-қувватламайди'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+      }),
+      (err) => {
+        let msg;
+        switch (err.code) {
+          case 1:  // PERMISSION_DENIED
+            msg = 'Жойлашувга рухсат берилмаган';
+            break;
+          case 2:  // POSITION_UNAVAILABLE
+            msg = 'Жойлашувни топиб бўлмади';
+            break;
+          case 3:  // TIMEOUT
+            msg = 'Жуда узоқ кутилди — қайта уриниб кўринг';
+            break;
+          default:
+            msg = 'Жойлашувни олиб бўлмади';
+        }
+        reject(new Error(msg));
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  });
 }
