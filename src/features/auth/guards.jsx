@@ -36,15 +36,34 @@ export function RequireAdmin({ children }) {
 /**
  * Root redirect ('/'). Role'ga qarab to'g'ri sahifaga yo'naltiradi.
  *  - admin     → /admin
- *  - driver    → /active-trips
+ *  - driver    → /active-trips (yoki ?accept=<id> bo'lsa /accept-trip/<id>)
  *  - passenger → /new-trip
  *  - guest     → /auth
+ *
+ * Telegram inline tugma URL'i `?accept=<trip_id>` bilan keladi.
+ * Agar driver login bo'lgan va shu parameter bor bo'lsa — accept page'ga
+ * yo'naltiramiz.
  */
 export function RoleRedirect() {
   const isAuth = useSelector(selectIsAuth);
   const role = useSelector(selectRole);
 
-  if (!isAuth) return <Navigate to="/auth" replace />;
+  if (!isAuth) {
+    // Auth flow URL parametrini saqlab qolishi kerak — AuthPage'da o'qiladi
+    return <Navigate to={`/auth${window.location.search}`} replace />;
+  }
+
+  // ?accept=<trip_id> — driver inline tugmadan keldi
+  if (role === 'driver') {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const acceptId = parseInt(params.get('accept'), 10);
+      if (Number.isFinite(acceptId) && acceptId > 0) {
+        return <Navigate to={`/accept-trip/${acceptId}`} replace />;
+      }
+    } catch (_) {}
+  }
+
   if (role === 'admin')  return <Navigate to="/admin" replace />;
   if (role === 'driver') return <Navigate to="/active-trips" replace />;
   return <Navigate to="/new-trip" replace />;

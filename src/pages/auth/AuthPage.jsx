@@ -69,6 +69,9 @@ export default function AuthPage() {
   const [carErrs, setCarErrs] = useState({});
 
   // ─── Tokenni saqlash va yo'naltirish ───────────────────────────────────────
+  // ?accept=<trip_id> URL parameteri bo'lsa — haydovchi telegram inline tugmasidan keldi.
+  // Bu holda /active-trips'ga emas, /accept-trip/<id>'ga yo'naltiramiz —
+  // u yerda avtomatik accept API chaqiriladi va natija ko'rsatiladi.
   const saveAndRedirect = useCallback((data) => {
     dispatch(setCredentials({
       user: data.user,
@@ -76,6 +79,14 @@ export default function AuthPage() {
       refreshToken: data.refresh_token,
     }));
     const role = data.user.role;
+
+    // Telegram WebApp URL parametri orqali kelgan trip qabul qilish
+    const acceptTripId = getAcceptTripIdFromUrl();
+    if (acceptTripId && role === "driver") {
+      navigate(`/accept-trip/${acceptTripId}`, { replace: true });
+      return;
+    }
+
     if (role === "admin") navigate("/admin", { replace: true });
     else if (role === "driver") navigate("/active-trips", { replace: true });
     else navigate("/new-trip", { replace: true });
@@ -708,4 +719,22 @@ function PhoneField({ phone, setPhone, phoneErr, onEnter, tt }) {
       sx={{ mb: 1.5 }}
     />
   );
+}
+
+// ─── URL parameter parsing ───────────────────────────────────────────────────
+// Telegram inline button web_app URL'ida `?accept=<trip_id>` keladi.
+// Bu funksiya browser URL'idan accept parameter'ni ajratib oladi.
+//
+// Telegram WebApp URL'i odatda: https://your-domain.com/?accept=42
+// React Router base path bilan ishlaydi.
+function getAcceptTripIdFromUrl() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const v = params.get('accept');
+    if (!v) return null;
+    const id = parseInt(v, 10);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  } catch (_) {
+    return null;
+  }
 }

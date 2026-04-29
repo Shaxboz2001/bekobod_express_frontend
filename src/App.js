@@ -20,6 +20,7 @@ import NewTripPage from './pages/trips/NewTripPage';
 import MyTripsPage from './pages/trips/MyTripsPage';
 import ActiveTripsPage from './pages/trips/ActiveTripsPage';
 import TripDetailPage from './pages/trips/TripDetailPage';
+import AcceptTripPage from './pages/trips/AcceptTripPage';
 import ProfilePage from './pages/profile/ProfilePage';
 
 // ─── Admin pages (lazy — bundle bloat'ni oldini olish) ───────────────────────
@@ -133,6 +134,17 @@ export default function App() {
                   <Route path="/trips/:id"    element={<TripDetailPage />} />
                   <Route path="/profile"      element={<ProfilePage />} />
                 </Route>
+
+                {/* Accept trip — Telegram inline tugmasidan keladi.
+                    AppLayout'dan tashqari (full-screen UI) lekin auth talab qiladi. */}
+                <Route
+                  path="/accept-trip/:id"
+                  element={
+                    <RequireAuth>
+                      <AcceptTripPage />
+                    </RequireAuth>
+                  }
+                />
 
                 {/* Root redirect — role'ga qarab */}
                 <Route path="/" element={<RoleRedirect />} />
