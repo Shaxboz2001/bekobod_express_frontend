@@ -165,6 +165,18 @@ export default function TripDetailPage() {
           />
         )}
 
+        {/* ─── Xarita preview (lokatsiya bo'lsa) ─────────────────────────── */}
+        {/* Haydovchi e'lonni qabul qilgach yo'lovchining aniq joyini ko'radi.
+            Tugma: tashqi navigation app'da ochish (Yandex Navi/Google Maps). */}
+        {trip.pickup_lat != null && trip.pickup_lng != null && (
+          <PickupLocationCard
+            lat={trip.pickup_lat}
+            lng={trip.pickup_lng}
+            address={trip.pickup_address || trip.pickup_point}
+            tt={tt}
+          />
+        )}
+
         {/* Route */}
         <Card sx={{ mb: 2 }}>
           <CardContent sx={{ p: 2 }}>
@@ -453,6 +465,103 @@ function ContactCard({ type, person, tt }) {
           )}
         </Stack>
       </CardContent>
+    </Card>
+  );
+}
+
+// ─── PickupLocationCard ──────────────────────────────────────────────────────
+// Yo'lovchi belgilagan lokatsiyani xaritada ko'rsatadi va navigatsiya app'larga
+// to'g'ridan-to'g'ri yo'l ochadi.
+//
+// Strategy:
+//   • Yandex Static Maps API (api kalit kerak emas hozircha)
+//   • Yandex Maps web (rtext) — marshrut tuzish
+//   • Google Maps fallback
+//   • OSM static rasm fallback (agar Yandex 4xx qaytarsa)
+function PickupLocationCard({ lat, lng, address, tt }) {
+  // ─ Deeplinks ────────────────────────────────────────────────────────────
+  const yandexMapsUrl = `https://yandex.com/maps/?rtext=~${lat},${lng}&rtt=auto&z=16`;
+  const gmapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+
+  // ─ Static map (Yandex asosiy, OSM fallback) ─────────────────────────────
+  // Yandex format: ll=lng,lat (E'TIBOR: lng birinchi)
+  // pt=lng,lat,STYLE — pm2rdl = red large pushpin
+  const yandexStaticUrl =
+    `https://static-maps.yandex.ru/1.x/?` +
+    `ll=${lng},${lat}&z=15&size=600,300&l=map` +
+    `&pt=${lng},${lat},pm2rdl`;
+
+  const osmStaticUrl =
+    `https://staticmap.openstreetmap.de/staticmap.php?` +
+    `center=${lat},${lng}&zoom=15&size=600x300&maptype=mapnik` +
+    `&markers=${lat},${lng},red-pushpin`;
+
+  const openLink = (url) => {
+    if (window.Telegram?.WebApp?.openLink) {
+      window.Telegram.WebApp.openLink(url);
+    } else {
+      window.open(url, '_blank');
+    }
+  };
+
+  return (
+    <Card sx={{ mb: 2, overflow: 'hidden' }}>
+      <CardContent sx={{ p: 2, pb: 1 }}>
+        <Typography
+          variant="caption" color="text.secondary"
+          fontWeight={600} sx={{ textTransform: 'uppercase' }}
+        >
+          📍 {tt('trip.pickup')}
+        </Typography>
+        {address && (
+          <Typography variant="body2" fontWeight={600} sx={{ mt: 0.5 }}>
+            {address}
+          </Typography>
+        )}
+        <Typography variant="caption" color="text.secondary">
+          {lat.toFixed(5)}, {lng.toFixed(5)}
+        </Typography>
+      </CardContent>
+
+      {/* Static map preview */}
+      <Box
+        component="img"
+        src={yandexStaticUrl}
+        alt="Pickup location"
+        onError={(e) => {
+          if (e.target.src !== osmStaticUrl) {
+            e.target.src = osmStaticUrl;
+          }
+        }}
+        onClick={() => openLink(yandexMapsUrl)}
+        sx={{
+          width: '100%',
+          height: 180,
+          objectFit: 'cover',
+          cursor: 'pointer',
+          display: 'block',
+          bgcolor: '#e8e8e8',
+        }}
+      />
+
+      <Stack direction="row" spacing={1} sx={{ p: 1.5 }}>
+        <Button
+          fullWidth
+          variant="contained"
+          onClick={() => openLink(yandexMapsUrl)}
+          sx={{ bgcolor: '#fc3f1d', '&:hover': { bgcolor: '#d93519' }, borderRadius: 2 }}
+        >
+          🧭 Yandex
+        </Button>
+        <Button
+          fullWidth
+          variant="outlined"
+          onClick={() => openLink(gmapsUrl)}
+          sx={{ borderColor: '#4285f4', color: '#4285f4', borderRadius: 2 }}
+        >
+          🗺️ Google
+        </Button>
+      </Stack>
     </Card>
   );
 }

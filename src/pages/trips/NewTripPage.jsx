@@ -5,7 +5,7 @@ import {
 } from '@mui/material';
 import {
   LocationOn, FlagOutlined, EventSeat,
-  Luggage, ArrowForward,
+  Luggage, ArrowForward, Map as MapIcon,
 } from '@mui/icons-material';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -19,6 +19,7 @@ import {
   BEKOBOD_POINTS, TASHKENT_POINTS,
 } from '../../utils/constants';
 import { useT } from '../../i18n';
+import LocationPicker from '../../components/common/LocationPicker';
 
 const INITIAL = {
   direction: 'bekobod_to_tashkent',
@@ -31,6 +32,10 @@ const INITIAL = {
   car_type_preference: 'any',
   notes: '',
   luggage: false,
+  // ─── Location (yangi, ixtiyoriy) ─────────────────────────────────────────
+  pickup_lat: null,
+  pickup_lng: null,
+  pickup_address: null,
 };
 
 export default function NewTripPage() {
@@ -40,6 +45,7 @@ export default function NewTripPage() {
   const tt = useT();
   const [form, setForm] = useState(INITIAL);
   const [error, setError] = useState('');
+  const [mapOpen, setMapOpen] = useState(false);
 
   const { data: pricingList = [] } = useQuery(
     'pricing',
@@ -87,6 +93,10 @@ export default function NewTripPage() {
       car_type_preference: form.car_type_preference,
       notes: form.notes || null,
       luggage: form.luggage,
+      // Location — null bo'lsa backend'da NULL saqlaydi, paired validator OK
+      pickup_lat: form.pickup_lat,
+      pickup_lng: form.pickup_lng,
+      pickup_address: form.pickup_address,
     });
   };
 
@@ -153,6 +163,30 @@ export default function NewTripPage() {
                 />
               )}
             />
+
+            {/* Xaritada belgilash tugmasi */}
+            <Button
+              variant={form.pickup_lat ? 'contained' : 'outlined'}
+              startIcon={<MapIcon />}
+              onClick={() => setMapOpen(true)}
+              sx={{
+                borderRadius: 2,
+                bgcolor: form.pickup_lat ? '#27ae60' : 'transparent',
+                color: form.pickup_lat ? '#fff' : '#1a1a2e',
+                borderColor: '#1a1a2e',
+                '&:hover': {
+                  bgcolor: form.pickup_lat ? '#229954' : 'rgba(26,26,46,0.04)',
+                },
+                textTransform: 'none',
+                justifyContent: 'flex-start',
+                py: 1,
+              }}
+            >
+              {form.pickup_lat
+                ? `📍 ${form.pickup_address || `${form.pickup_lat.toFixed(4)}, ${form.pickup_lng.toFixed(4)}`}`
+                : 'Харитадан танлаш (ихтиёрий)'}
+            </Button>
+
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Divider sx={{ flex: 1 }} />
               <Box sx={{ p: 0.75, bgcolor: '#f4f6f9', borderRadius: '50%', display: 'flex' }}>
@@ -377,6 +411,24 @@ export default function NewTripPage() {
           : `🚕 ${tt('common.submit')} — ${totalPrice ? formatPrice(totalPrice) : '...'}`
         }
       </Button>
+
+      {/* Lokatsiya tanlash dialog */}
+      <LocationPicker
+        open={mapOpen}
+        onClose={() => setMapOpen(false)}
+        initialPos={form.pickup_lat ? [form.pickup_lat, form.pickup_lng] : null}
+        directionHint={form.direction}
+        onConfirm={({ lat, lng, address }) => {
+          setForm((f) => ({
+            ...f,
+            pickup_lat: lat,
+            pickup_lng: lng,
+            pickup_address: address,
+            // Agar pickup_point bo'sh bo'lsa, address'ni qo'shamiz
+            pickup_point: f.pickup_point || address || `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+          }));
+        }}
+      />
     </Box>
   );
 }
